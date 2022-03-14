@@ -15,6 +15,13 @@ struct Opt {
 
 static struct Opt kOpt;
 
+//
+// parseArgs()
+// @argc - Arg count.
+// @argv - Arg list.
+//
+// Parses and stores arg values into kOpt.
+//
 void parseArgs(int argc, char *argv[]) {
   int i;
 
