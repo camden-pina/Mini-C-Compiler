@@ -13,15 +13,15 @@ all: $(OBJS)
 .PHONY: test
 test:
 	valgrind -s \
-		--leak-check=full \
-		--show-leak-kinds=all \
-		--track-origins=yes \
-		./results.o
+    --leak-check=full \
+    --show-leak-kinds=all \
+    --track-origins=yes \
+    ./$(TARGET) test.c -o test.s
 
 .PHONY: clean
 clean:
 	rm -f *.o
-	rm -f out.s
-	rm -f out
+	rm -f test.s
+	rm -f $(TARGET)
 
 	rm -f src/*.o

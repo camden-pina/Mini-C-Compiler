@@ -8,9 +8,46 @@
 #include "gen.h"
 #include "symbols.h"
 
-int main(void) {
-  char *stream = fileRead("test.c");
-  char *out = "out.s";
+struct Opt {
+  char *in_file;
+  char *out_file;
+};
+
+static struct Opt kOpt;
+
+void parseArgs(int argc, char *argv[]) {
+  int i;
+
+  for (i = 1; i < argc; i++) {
+    if (argv[i][0] == '-') {
+      switch (argv[i][1]) {
+        case 'o':
+          i++;
+          if (argv[i] == NULL) {
+            break;
+          }
+
+          kOpt.out_file = argv[i];
+          break;
+        default:
+          ERROR("Unknown argument '-%c'", argv[i][1]);
+      }
+    }
+    else {
+      kOpt.in_file = argv[i];
+    }   
+  }
+
+  if (kOpt.in_file == NULL || kOpt.out_file == NULL) {
+    ERROR("Syntax is './results.o <input_file> -o <output_file>'");
+  }
+}
+
+int main(int argc, char *argv[]) {
+  parseArgs(argc, argv);
+
+  char *stream = fileRead(kOpt.in_file);
+  char *out = kOpt.out_file;
 
   // Lexer
   lexerInit();
