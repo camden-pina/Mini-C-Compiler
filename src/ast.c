@@ -15,7 +15,6 @@ const char* kAstTypeStr[] = {
   "AST_SEMI",
 
   "AST_ASTERISK",
-  "AST_FSLASH",
   "AST_PLUS",
   "AST_HYPH",
 
