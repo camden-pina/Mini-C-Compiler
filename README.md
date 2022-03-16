@@ -1,5 +1,18 @@
 # Mini-C-Compiler
 This is an early stage C compiler. It is experimental and shouldn't be used in any professional environment.
+
+## Roadmap
+Below are the planned features for the immediate roadmap.
+
+☑️ Conditionals</br>
+☑️ Scope</br>
+☑️ If Statements</br>
+☑️ Functions</br>
+☑️ More Data Types!</br>
+☑️ Pointers</br>
+☑️ Casting</br>
+☑️ Preprocessor</br>
+
 ## Prerequisites
 Compiler has been tested stable with the following environment.
 * Ubuntu Linux 20.04 LTS<br>
