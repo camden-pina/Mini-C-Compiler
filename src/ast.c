@@ -38,14 +38,15 @@ void astPrint(struct Ast *root) {
     astPrint(ast->l_ast);
 
     if (ast->type == AST_ID || ast->type == AST_LV_ID) {
-      printf("[AST][%s]:[%s]\n", kAstTypeStr[ast->type], symbolRead(ast->val.symbol_idx));
+      fprintf(stderr, "[AST][%s]:[%s]\n", kAstTypeStr[ast->type],
+              symbolRead(ast->val.symbol_idx));
     }
     else if (ast->type == AST_LIT) {
-      printf("[AST][%s]:[%i]\n", kAstTypeStr[ast->type], ast->val.val);
+      fprintf(stderr, "[AST][%s]:[%i]\n", kAstTypeStr[ast->type], ast->val.val);
     } else {
-      printf("[AST][%s]:[%s]\n", kAstTypeStr[ast->type], kAstTypeStr[ast->type]);
+      fprintf(stderr, "[AST][%s]:[%s]\n", kAstTypeStr[ast->type],
+              kAstTypeStr[ast->type]);
     }
-
     astPrint(ast->r_ast);
   }
 }
@@ -106,7 +107,7 @@ static struct Ast* astOperand(struct Token **tok) {
 static int kOpPrec[] = {
   0, 0, 0, 0,
   0, 0,
-  2, 2, 1, 1, // M, D, A, S
+  2, 1, 1, // M, D, A, S
 };
 
 //

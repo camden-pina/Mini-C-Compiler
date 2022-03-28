@@ -3,6 +3,8 @@
 
 #include "token.h"
 
+#include <stdbool.h>
+
 enum kAstType {
   AST_ID,
   AST_OP,
