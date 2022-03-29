@@ -11,6 +11,7 @@
 struct Symbols {
     char *name;
     int sz;
+    int stk_off;
 };
 
 //

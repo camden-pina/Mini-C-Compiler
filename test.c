@@ -1,10 +1,11 @@
-int a;
 int b;
+int a;
 int c;
 
-a = 8;
-b = 2;
-c = 2;
+c = 8 * 4 + 7 - 2 * 7 - 2 + 6;
+a = c * 2 + c;
+b = 0;
+b = b - b * b + b + b - b + c + a - c - c - 0 * 2 * 4;
 
-return a - b * c;
+return c + a + b;
 

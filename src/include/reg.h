@@ -23,8 +23,9 @@ void regUnRsv(int reg);
 // @reg2 - Register two.
 //
 // Changes the register size of @reg1 to the size of @reg2.
+// (e.g. regEqualize(eax, rdx) -> rax)
 //
-void regEqualize(int *reg1, int *reg2);
+void regEqualize(int *reg1, int reg2);
 
 //
 // Getters

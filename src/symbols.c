@@ -53,6 +53,8 @@ int symbolAdd(const char *name, int sz) {
 #endif
   kSymbolsTable[symbol_idx].sz = sz;
 
+  kSymbolsTable[symbol_idx].stk_off = 0;
+
   return symbol_idx;
 }
 

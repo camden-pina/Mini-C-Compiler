@@ -2,159 +2,20 @@
 #include "common.h"
 #include "symbols.h"
 #include "reg.h"
-#include "stack.h"
 #include "instr.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
-// https://i.stack.imgur.com/j8hpC.png
-
 extern struct Symbols kSymbolsTable[MAX_SYMBOLS];
 
 static FILE *kOutFile;
 
+// ########################################
 //
-// genSetReturn()
-// @reg - Reigster storing calculated return value.
+// Preamble & Postamble
 //
-// Sets '%rax' register to @reg.
-//
-static int genSetReturn(int reg) {
-  // Used for register equalization.
-  int rax = 4;
-  regEqualize(&reg, &rax);
-
-  fprintf(kOutFile, "\tmovq %s, %%rax\n", regGetID(reg));
-  return 0;
-}
-
-//
-// Arithmetic
-//
-
-static int genMul(int reg1, int reg2) {
-  regEqualize(&reg1, &reg2);
-
-  fprintf(kOutFile, "\timul %s, %s\n", regGetID(reg2), regGetID(reg1));
-
-  regUnRsv(reg2);
-  return reg1;
-}
-
-static int genAdd(int reg1, int reg2) {
-  regEqualize(&reg1, &reg2);
-   
-  fprintf(kOutFile, "\tadd%c\t%s, %s\n", instrGetMatchingSuffix(reg2 + 1),
-          regGetID(reg2), regGetID(reg1));
-  
-  regUnRsv(reg2);
-  return reg1;
-}
-
-static int genSub(int reg1, int reg2) {
-  regEqualize(&reg1, &reg2);
- 
-  fprintf(kOutFile, "\tsub%c\t%s, %s\n", instrGetMatchingSuffix(reg2 + 1),
-          regGetID(reg2), regGetID(reg1));
-
-  regUnRsv(reg2);
-  return reg1;
-}
-
-//
-// Symbols
-//
-
-//
-// genLoadLit()
-// @val - Value to put on stack.
-//
-// Loads @val onto reserved space on the stack.
-//
-static int genLoadLit(int val) {
-  // Set from func call 'genStoreSymbol()'
-  // Set to the size of identifier storing @val.
-  extern int kStackNewAllocSz;
-
-  fprintf(kOutFile, "\tmov%c\t$%i, -%i(%%rbp)\n", instrGetMatchingSuffix(kStackNewAllocSz), val, stackGetSize());
-  return 0;
-}
-
-//
-// genLoadSymbol()
-// @id - Identifer retrieve from stack.
-//
-// Retrieves the value @id from the stack.
-//
-static int genLoadSymbol(char *id) {
-  int stk_alloc = 0;
-
-  int sym_idx = symbolFind(id);
-  for (int i = 0; i <= sym_idx; i++) {
-    stk_alloc += kSymbolsTable[i].sz;
-  }
-
-  int sym_sz = kSymbolsTable[sym_idx].sz;
-  int reg = regRsv(sym_sz);
-  fprintf(kOutFile, "\tmov%c\t-%i(%%rbp), %s\n", instrGetMatchingSuffix(sym_sz), stk_alloc, regGetID(reg));
-
-  return reg;
-}
-
-//
-// genStoreSymbol()
-// @id - Identifier to reserve on the stack.
-//
-// Reserves an amount of bytes equal to the size of the @id.
-//
-static int genStoreSymbol(char *id) {
-  stackRsv(id);
-  return 0;
-}
-
-//
-// genGenerateCode()
-// @ast - Ast to generate code for.
-//
-// Converts @ast to x86_64 code. Results after each operation are immediately
-// stored into @kOutFile.
-//
-static int genGenerateCode(struct Ast *ast) {
-  int l_reg = 0, r_reg = 0;
-
-  if (ast->l_ast) {
-    l_reg = genGenerateCode(ast->l_ast);
-  }
-
-  if (ast->r_ast) {
-    r_reg = genGenerateCode(ast->r_ast);
-  }
-
-  switch (ast->type) {
-    case AST_LIT:
-      return genLoadLit(ast->val.val);
-    case AST_ID:
-      return genLoadSymbol(kSymbolsTable[ast->val.symbol_idx].name);
-    case AST_LV_ID:
-      return genStoreSymbol(kSymbolsTable[ast->val.symbol_idx].name);
-    case AST_EQ:
-      return r_reg;
-    case AST_ASTERISK:
-      return genMul(l_reg, r_reg);
-   case AST_PLUS:
-      return genAdd(l_reg, r_reg);
-    case AST_HYPH:
-      return genSub(l_reg, r_reg);
-    case AST_RET:
-      return genSetReturn(r_reg);
-    case AST_GLUE:
-      return 0;
-    default:
-      ERROR("Unknown AST Operator '%i'", ast->type);
-  }
-  return 0;
-}
+// ########################################
 
 static const char *kPreamble = 
   ".global main\n\n"
@@ -167,6 +28,377 @@ static const char *kPostamble =
   "\tpopq %rbp\n"
   "\tret\n";
 
+void emitPreamble() {
+    fprintf(kOutFile, "%s", kPreamble);
+}
+
+void emitPostamble() {
+    fprintf(kOutFile, "%s", kPostamble);
+}
+
+// ########################################
+//
+// Return value
+//
+// ########################################
+
+//
+// emitReturn()
+// @reg - ReigsterID storing return value.
+//
+// Sets '%rax' register to @reg if @reg isn't already the %rax or %eax register.
+// Returns AST_NULL.
+//
+static int emitReturn(int reg) {
+  // Used for register equalization.
+  if (reg != 0 && reg != 4) {
+    int rax = 4;
+    regEqualize(&reg, rax);
+
+    fprintf(kOutFile, "\tmovq %s, %%rax\n", regGetID(reg));
+  }
+
+  regUnRsv(reg);
+  return AST_NULL;
+}
+
+// ########################################
+// Memory Instructions
+// ########################################
+
+//
+// emitMov()
+// @suffix - suffix describing instruction size to use.
+// @val1 | @val2 - f: 0 - @val1 = int lit | @val2 = register ID
+//                 f: 1 - @val1 = int lit | @val2 = stack_offset.
+//                 f: 2 - @val1 = stack_offset | @val2 = register ID.
+//                 f: 3 - @val1 = register ID | @val2 = stack_offset.
+//
+// @f - f - flag that describes what the contents of @val should be.
+//
+// Emits x86_64 code to mov @val1 into @val2.
+// Results are stored in @val2.
+//
+static void emitMov(char suffix, int val1, int val2, int f) {
+  switch (f) {
+    case 0:
+      fprintf(kOutFile, "\tmov%c\t$%i, %s\n", suffix, val1, regGetID(val2));
+      break;
+    case 1:
+      fprintf(kOutFile, "\tmov%c\t$%i, -%i(%%rbp)\n", suffix, val1, val2);
+      break;
+    case 2:
+      fprintf(kOutFile, "\tmov%c\t-%i(%%rbp), %s\n", suffix, val1, regGetID(val2));
+      break;
+    case 3:
+      fprintf(kOutFile, "\tmov%c\t%s, -%i(%%rbp)\n", suffix, regGetID(val1), val2);
+      break;
+    default:
+      ERROR("WHACK");
+  }
+}
+
+//
+// genEq()
+// @root - Root of Ast binary operation.
+// @l_reg - l_reg.
+// @r_reg - r_reg.
+//
+// Emits code to mov @r_reg into @l_reg if @root is more than a binary equation.
+// Returns AST_NULL.
+//
+static int genEq(struct Ast *root, int l_reg, int r_reg) {
+  if (root->r_ast->type != AST_LIT) {
+    char suffix = instrGetMatchingSuffix(r_reg);
+    emitMov(suffix, r_reg, l_reg, 3);
+    regUnRsv(r_reg);
+  }
+  return AST_NULL;
+}
+
+// ########################################
+//
+// Arithmetic
+//
+// ########################################
+
+//
+// emitMul()
+// @suffix - suffix describing instruction size to use.
+// @val - no_int: false - int lit.
+//        no_int: true  - register id.
+// @reg - register to store the product.
+// @no_int - flag that describes what the contents of @val should be.
+//
+// Emits x86_64 code to get the product of @val and @reg.
+// Results are stored in @reg.
+//
+static void emitMul(char suffix, int val, const char *reg, bool no_int) {
+  if (no_int == true) {
+    fprintf(kOutFile, "\timul%c\t%s, %s\n", suffix, regGetID(val), reg);
+  } else {
+    fprintf(kOutFile, "\timul%c\t$%i, %s\n", suffix, val, reg);
+  }
+}
+
+//
+// emitAdd()
+// @suffix - suffix describing instruction size to use.
+// @val - no_int: false - int lit.
+//        no_int: true  - register id.
+// @reg - register to store the sum.
+// @no_int - flag that describes what the contents of @val should be.
+//
+// Emits x86_64 code to get the sum of @val and @reg.
+// Results are stored in @reg.
+//
+static void emitAdd(char suffix, int val, const char *reg, bool no_int) {
+  if (no_int == true) {
+    fprintf(kOutFile, "\tadd%c\t%s, %s\n", suffix, regGetID(val), reg);
+  } else {
+    fprintf(kOutFile, "\tadd%c\t$%i, %s\n", suffix, val, reg);
+  }
+}
+
+//
+// emitSub()
+// @suffix - suffix describing instruction size to use.
+// @val - no_int - flag that describes what the contents of @val should be.
+//        no_int: false - @val = int lit.
+//        no_int: true  - @val = register id.
+// @reg - register to store the difference.
+//
+// Emits x86_64 code to get the difference of @val and @reg.
+// Results are stored in @reg.
+//
+static void emitSub(char suffix, int val, const char *reg, bool no_int) {
+  if (no_int == true) {
+    fprintf(kOutFile, "\tsub%c\t%s, %s\n", suffix, regGetID(val), reg);
+  } else {
+    fprintf(kOutFile, "\tsub%c\t$%i, %s\n", suffix, val, reg);
+  }
+}
+
+//
+// genMul()
+// @root - Root of Ast binary operation.
+// @l_reg - l_reg.
+// @r_reg - r_reg.
+//
+// Returns the registerID storing the product of @l_reg and @r_reg.
+//
+static int genMul(struct Ast *root, int l_reg, int r_reg) {
+  char suffix;
+
+  if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
+    int reg = regRsv(4);
+    suffix = instrGetMatchingSuffix(4 - 1);
+    emitMov(suffix, l_reg, reg, 0);
+    emitMul(suffix, r_reg, regGetID(reg), false);
+    return reg;
+  } else if (root->l_ast->type == AST_LIT) {
+    suffix = instrGetMatchingSuffix(r_reg);
+    emitMul(suffix, l_reg, regGetID(r_reg), false);
+    return r_reg;
+  } else if (root->r_ast->type == AST_LIT) {
+    suffix = instrGetMatchingSuffix(l_reg);
+    emitMul(suffix, r_reg, regGetID(l_reg), false);
+  } else {
+    regEqualize(&l_reg, r_reg);
+    suffix = instrGetMatchingSuffix(r_reg);
+    emitMul(suffix, r_reg, regGetID(l_reg), true);
+    regUnRsv(r_reg);
+  }
+  return l_reg;
+}
+
+//
+// genAdd()
+// @root - Root of Ast binary operation.
+// @l_reg - l_reg.
+// @r_reg - r_reg.
+//
+// Returns the registerID storing the sum of @l_reg and @r_reg.
+//
+static int genAdd(struct Ast *root, int l_reg, int r_reg) {
+  char suffix;
+
+  if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
+    int reg = regRsv(4);
+    suffix = instrGetMatchingSuffix(4 - 1);
+    emitMov(suffix, l_reg, reg, 0);
+    emitAdd(suffix, r_reg, regGetID(reg), false);
+    return reg;
+  } else if (root->l_ast->type == AST_LIT) {
+    suffix = instrGetMatchingSuffix(r_reg);
+    emitAdd(suffix, l_reg, regGetID(r_reg), false);
+    return r_reg;
+  } else if (root->r_ast->type == AST_LIT) {
+    suffix = instrGetMatchingSuffix(l_reg);
+    emitAdd(suffix, r_reg, regGetID(l_reg), false);
+  } else {
+    regEqualize(&l_reg, r_reg);
+    suffix = instrGetMatchingSuffix(r_reg);
+    emitAdd(suffix, r_reg, regGetID(l_reg), true);
+    regUnRsv(r_reg);
+  }
+  return l_reg;
+}
+
+//
+// genSub()
+// @root - Root of Ast binary operation.
+// @l_reg - l_reg.
+// @r_reg - r_reg.
+//
+// Returns the registerID storing the difference of @l_reg and @r_reg.
+//
+static int genSub(struct Ast *root, int l_reg, int r_reg) {
+  char suffix;
+
+  if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
+    int reg = regRsv(4);
+    suffix = instrGetMatchingSuffix(4 - 1);
+    emitMov(suffix, l_reg, reg, 0);
+    emitSub(suffix, r_reg, regGetID(reg), false);
+    return reg;
+  } else if (root->l_ast->type == AST_LIT) {
+    suffix = instrGetMatchingSuffix(r_reg);
+    emitSub(suffix, l_reg, regGetID(r_reg), false);
+    return r_reg;
+  } else if (root->r_ast->type == AST_LIT) {
+    suffix = instrGetMatchingSuffix(l_reg);
+    emitSub(suffix, r_reg, regGetID(l_reg), false);
+  } else {
+    regEqualize(&l_reg, r_reg);
+    suffix = instrGetMatchingSuffix(r_reg);
+    emitSub(suffix, r_reg, regGetID(l_reg), true);
+    regUnRsv(r_reg);
+  }
+  return l_reg;
+}
+
+// ########################################
+//
+// Symbols
+//
+// ########################################
+
+static int last_alloc_var_idx = 0;
+
+//
+// genLoadLit()
+// @val - Int value to load into register.
+//
+// Stores @val into recently allocated variable on the stack.
+// Returns AST_NULL.
+//
+//
+static int genLoadLit(int val) {
+  struct Symbols symbol = kSymbolsTable[last_alloc_var_idx];
+
+  char suffix = instrGetMatchingSuffix(symbol.sz - 1);
+  int stk_off = symbol.stk_off;
+
+  emitMov(suffix, val, stk_off, 1);
+  return AST_NULL;
+}
+
+//
+// genLoadSymbol()
+// @id - Identifer name to load from the stack.
+//
+// Loads the value at the stack position representing @id into a new register.
+// Returns the register ID of the newly allocated register.
+//
+static int genLoadSymbol(char *id) {
+  int sym_idx = symbolFind(id);
+
+  int stk_off = kSymbolsTable[sym_idx].stk_off;
+  int sym_sz = kSymbolsTable[sym_idx].sz;
+  int reg = regRsv(sym_sz);
+
+  char suffix = instrGetMatchingSuffix(sym_sz - 1);
+
+  emitMov(suffix, stk_off, reg, 2);
+
+  return reg;
+}
+
+//
+// genStoreSymbol()
+// @id - Identifier to set the stack offset of.
+//
+// Sets the stack offset of @id.
+// Returns the stack offset of @id.
+//
+static int genStoreSymbol(char *id) {
+  int sym_idx = symbolFind(id);
+
+  if (sym_idx == -1) {
+    ERROR("Wierd symbol found, not sure if we're going to keep this error");
+  }
+
+  struct Symbols *symbol = &kSymbolsTable[sym_idx];
+  
+  if (symbol->stk_off == 0) {
+    symbol->stk_off = kSymbolsTable[last_alloc_var_idx].stk_off + symbol->sz;
+
+    last_alloc_var_idx = sym_idx;
+  }
+
+  return symbol->stk_off;
+}
+
+//
+// genGenerateCode()
+// @root - Ast to convert into x86_64 code.
+// @parent_type - Used internally for recusrion.
+//                SET TO AST_NULL.
+//
+// Converts @root to x86_64 ATT-style code.
+// Results after each operation are immediately stored into @kOutFile.
+//
+static int genGenerateCode(struct Ast *root, enum kAstType parent_type) {
+  int l_reg = 0, r_reg = 0;
+
+  if (root->l_ast) {
+    l_reg = genGenerateCode(root->l_ast, root->type);
+  }
+
+  if (root->r_ast) {
+    r_reg = genGenerateCode(root->r_ast, root->type);
+  }
+
+  switch (root->type) {
+    case AST_LIT:
+      if (parent_type != AST_EQ) {
+        return root->val.val;
+      }
+      return genLoadLit(root->val.val);
+    case AST_ID:
+      return genLoadSymbol(kSymbolsTable[root->val.symbol_idx].name);
+    case AST_LV_ID:
+      return genStoreSymbol(kSymbolsTable[root->val.symbol_idx].name);
+    case AST_EQ:
+      return genEq(root, l_reg, r_reg);
+    case AST_ASTERISK:
+      return genMul(root, l_reg, r_reg);
+    case AST_PLUS:
+      return genAdd(root, l_reg, r_reg);
+    case AST_HYPH:
+      return genSub(root, l_reg, r_reg);
+    case AST_RET:
+      return emitReturn(r_reg);
+    case AST_NULL:
+    case AST_GLUE:
+      return 0;
+    default:
+      ERROR("Unknown AST Operator '%i'", root->type);
+  }
+  return 0;
+}
+
 void genGenerate(struct Ast *root, const char *filename) {
   kOutFile = fopen(filename, "w");
 
@@ -177,13 +409,13 @@ void genGenerate(struct Ast *root, const char *filename) {
   // Generate assembly code
 
   {
-    fprintf(kOutFile, "%s", kPreamble);
+    emitPreamble();
 
     if (root != NULL) {
-     genGenerateCode(root);
+     genGenerateCode(root, AST_NULL);
     }
 
-    fprintf(kOutFile, "%s", kPostamble);
+    emitPostamble();
   }
 
   fclose(kOutFile);
