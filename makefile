@@ -17,11 +17,11 @@ test:
 		--show-leak-kinds=all \
 		--track-origins=yes \
 		./$(TARGET) test.c -o test.s
+	gcc test.s -o test
 
 .PHONY: clean
 clean:
-	rm -f *.o
-	rm -f test.s
-	rm -f $(TARGET)
-
 	rm -f src/*.o
+	rm -f $(TARGET)
+	rm -f test.s
+	rm -f test
