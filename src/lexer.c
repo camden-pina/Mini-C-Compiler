@@ -27,6 +27,20 @@ struct Token *lexerTokenize(const char *stream) {
     if (isspace(*p)) {
       p++;
       continue;
+    } else if (*p == '/' && p[1] == '/') {
+      p += 2;
+      while (*p != '\n') {
+        p++;
+      }
+      p++;
+      continue;
+    } else if (*p == '/' && p[1] == '*') {
+      p += 2;
+      while (*p != '*' && p[1] != '/') {
+        p++;
+      }
+      p += 2;
+      continue;
     } else if (isdigit(*p)) {
       token = tokenCreate(p, TOK_LIT);
     } else if (isalpha(*p)) {
