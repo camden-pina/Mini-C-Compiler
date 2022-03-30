@@ -4,6 +4,7 @@ This is an early stage C compiler. It is experimental and shouldn't be used in a
 ## Roadmap
 Below are the planned features for the immediate roadmap.
 
+✅ Comments</br>
 ☑️ Conditionals</br>
 ☑️ Scope</br>
 ☑️ If Statements</br>
