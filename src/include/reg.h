@@ -1,6 +1,8 @@
 #ifndef _REG_H_
 #define _REG_H_
 
+#include <stdbool.h>
+
 //
 // regRsv()
 // @bytes - Size of bytes to reserve for register.
@@ -38,5 +40,12 @@ void regEqualize(int *reg1, int reg2);
 // Returns the name of the register base off @reg.
 //
 const char *regGetID(int reg);
+
+//
+// regCheckAllFree()
+//
+// Returns 1 if all registers are free, else returns 0.
+//
+bool regCheckFreeAll(void);
 
 #endif // _REG_H_

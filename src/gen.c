@@ -49,7 +49,11 @@ void emitPostamble() {
 // Sets '%rax' register to @reg if @reg isn't already the %rax or %eax register.
 // Returns AST_NULL.
 //
-static int emitReturn(int reg) {
+static int emitReturn(struct Ast *root, int reg) {
+  if (root->r_ast->type == AST_LIT) {
+    fprintf(kOutFile, "\tmovq $%i, %%rax\n", root->r_ast->val.val);
+  } else {
+
   // Used for register equalization.
   if (reg != 0 && reg != 4) {
     int rax = 4;
@@ -57,8 +61,9 @@ static int emitReturn(int reg) {
 
     fprintf(kOutFile, "\tmovq %s, %%rax\n", regGetID(reg));
   }
-
   regUnRsv(reg);
+  }
+
   return AST_NULL;
 }
 
@@ -108,10 +113,13 @@ static void emitMov(char suffix, int val1, int val2, int f) {
 // Returns AST_NULL.
 //
 static int genEq(struct Ast *root, int l_reg, int r_reg) {
+  // Only do something if we're not doing a direct assignment.
   if (root->r_ast->type != AST_LIT) {
     char suffix = instrGetMatchingSuffix(r_reg);
     emitMov(suffix, r_reg, l_reg, 3);
     regUnRsv(r_reg);
+  } else {
+    emitMov('l', r_reg, l_reg, 1);
   }
   return AST_NULL;
 }
@@ -284,26 +292,6 @@ static int genSub(struct Ast *root, int l_reg, int r_reg) {
 //
 // ########################################
 
-static int last_alloc_var_idx = 0;
-
-//
-// genLoadLit()
-// @val - Int value to load into register.
-//
-// Stores @val into recently allocated variable on the stack.
-// Returns AST_NULL.
-//
-//
-static int genLoadLit(int val) {
-  struct Symbols symbol = kSymbolsTable[last_alloc_var_idx];
-
-  char suffix = instrGetMatchingSuffix(symbol.sz - 1);
-  int stk_off = symbol.stk_off;
-
-  emitMov(suffix, val, stk_off, 1);
-  return AST_NULL;
-}
-
 //
 // genLoadSymbol()
 // @id - Identifer name to load from the stack.
@@ -341,6 +329,8 @@ static int genStoreSymbol(char *id) {
 
   struct Symbols *symbol = &kSymbolsTable[sym_idx];
   
+  static int last_alloc_var_idx = 0;
+
   if (symbol->stk_off == 0) {
     symbol->stk_off = kSymbolsTable[last_alloc_var_idx].stk_off + symbol->sz;
 
@@ -359,23 +349,20 @@ static int genStoreSymbol(char *id) {
 // Converts @root to x86_64 ATT-style code.
 // Results after each operation are immediately stored into @kOutFile.
 //
-static int genGenerateCode(struct Ast *root, enum kAstType parent_type) {
+static int genGenerateCode(struct Ast *root) {
   int l_reg = 0, r_reg = 0;
 
   if (root->l_ast) {
-    l_reg = genGenerateCode(root->l_ast, root->type);
+    l_reg = genGenerateCode(root->l_ast);
   }
 
   if (root->r_ast) {
-    r_reg = genGenerateCode(root->r_ast, root->type);
+    r_reg = genGenerateCode(root->r_ast);
   }
 
   switch (root->type) {
     case AST_LIT:
-      if (parent_type != AST_EQ) {
-        return root->val.val;
-      }
-      return genLoadLit(root->val.val);
+      return root->val.val;
     case AST_ID:
       return genLoadSymbol(kSymbolsTable[root->val.symbol_idx].name);
     case AST_LV_ID:
@@ -389,7 +376,7 @@ static int genGenerateCode(struct Ast *root, enum kAstType parent_type) {
     case AST_HYPH:
       return genSub(root, l_reg, r_reg);
     case AST_RET:
-      return emitReturn(r_reg);
+      return emitReturn(root, r_reg);
     case AST_NULL:
     case AST_GLUE:
       return 0;
@@ -412,7 +399,7 @@ void genGenerate(struct Ast *root, const char *filename) {
     emitPreamble();
 
     if (root != NULL) {
-     genGenerateCode(root, AST_NULL);
+     genGenerateCode(root);
     }
 
     emitPostamble();
