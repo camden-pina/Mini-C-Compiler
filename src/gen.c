@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <stdint.h>
+
 extern struct Symbols kSymbolsTable[MAX_SYMBOLS];
 
 static FILE *kOutFile;
@@ -99,7 +101,7 @@ static void emitMov(char suffix, int val1, int val2, int f) {
       fprintf(kOutFile, "\tmov%c\t%s, -%i(%%rbp)\n", suffix, regGetID(val1), val2);
       break;
     default:
-      ERROR("WHACK");
+      ERROR("Invalid arg(f)");
   }
 }
 
@@ -113,13 +115,23 @@ static void emitMov(char suffix, int val1, int val2, int f) {
 // Returns AST_NULL.
 //
 static int genEq(struct Ast *root, int l_reg, int r_reg) {
+  int stk_off;
+
   // Only do something if we're not doing a direct assignment.
   if (root->r_ast->type != AST_LIT) {
     char suffix = instrGetMatchingSuffix(r_reg);
-    emitMov(suffix, r_reg, l_reg, 3);
+    stk_off = l_reg;
+    emitMov(suffix, r_reg, stk_off, 3);
     regUnRsv(r_reg);
   } else {
-    emitMov('l', r_reg, l_reg, 1);
+    int symbol_idx = root->l_ast->val.symbol_idx;
+    struct Symbols *symbol = &kSymbolsTable[symbol_idx];
+    char suffix = instrGetMatchingSuffix(symbol->sz - 1);
+
+    int val = r_reg;
+    stk_off = l_reg;
+
+    emitMov(suffix, val, stk_off, 1);
   }
   return AST_NULL;
 }
@@ -199,6 +211,8 @@ static int genMul(struct Ast *root, int l_reg, int r_reg) {
   char suffix;
 
   if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
+    // We need to add a check here to ensure we are using a register large
+    // enough to fit the requested value.
     int reg = regRsv(4);
     suffix = instrGetMatchingSuffix(4 - 1);
     emitMov(suffix, l_reg, reg, 0);
@@ -328,7 +342,6 @@ static int genStoreSymbol(char *id) {
   }
 
   struct Symbols *symbol = &kSymbolsTable[sym_idx];
-  
   static int last_alloc_var_idx = 0;
 
   if (symbol->stk_off == 0) {
@@ -350,14 +363,14 @@ static int genStoreSymbol(char *id) {
 // Results after each operation are immediately stored into @kOutFile.
 //
 static int genGenerateCode(struct Ast *root) {
-  int l_reg = 0, r_reg = 0;
+  int l_val = 0, r_val = 0;
 
   if (root->l_ast) {
-    l_reg = genGenerateCode(root->l_ast);
+    l_val = genGenerateCode(root->l_ast);
   }
 
   if (root->r_ast) {
-    r_reg = genGenerateCode(root->r_ast);
+    r_val = genGenerateCode(root->r_ast);
   }
 
   switch (root->type) {
@@ -368,15 +381,15 @@ static int genGenerateCode(struct Ast *root) {
     case AST_LV_ID:
       return genStoreSymbol(kSymbolsTable[root->val.symbol_idx].name);
     case AST_EQ:
-      return genEq(root, l_reg, r_reg);
+      return genEq(root, l_val, r_val);
     case AST_ASTERISK:
-      return genMul(root, l_reg, r_reg);
+      return genMul(root, l_val, r_val);
     case AST_PLUS:
-      return genAdd(root, l_reg, r_reg);
+      return genAdd(root, l_val, r_val);
     case AST_HYPH:
-      return genSub(root, l_reg, r_reg);
+      return genSub(root, l_val, r_val);
     case AST_RET:
-      return emitReturn(root, r_reg);
+      return emitReturn(root, r_val);
     case AST_NULL:
     case AST_GLUE:
       return 0;
