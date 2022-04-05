@@ -19,7 +19,6 @@ static FILE *kOutFile;
 
 static const char *kPreamble = 
   ".global main\n\n"
-  ".align 2\n\n"
   "main:\n"
   "\tpushq %rbp\n"
   "\tmovq %rsp, %rbp\n";
@@ -49,16 +48,20 @@ void emitPostamble() {
 // Sets '%rax' register to @reg if @reg isn't already the %rax or %eax register.
 // Returns AST_NULL.
 //
-static int emitReturn(int reg) {
-  // Used for register equalization.
-  if (reg != 0 && reg != 4) {
-    int rax = 4;
-    regEqualize(&reg, rax);
+static int emitReturn(struct Ast *root, int reg) {
+  if (root->r_ast->type == AST_LIT) {
+    fprintf(kOutFile, "\tmovq $%i, %%rax\n", root->r_ast->val.val);
+  } else {
+    // Used for register equalization.
+    if (reg != 0 && reg != 4) {
+      int rax = 4;
+      regEqualize(&reg, rax);
 
-    fprintf(kOutFile, "\tmovq %s, %%rax\n", regGetID(reg));
+      fprintf(kOutFile, "\tmovq %s, %%rax\n", regGetID(reg));
+    }
+    regUnRsv(reg);
   }
 
-  regUnRsv(reg);
   return AST_NULL;
 }
 
@@ -69,10 +72,10 @@ static int emitReturn(int reg) {
 //
 // emitMov()
 // @suffix - suffix describing instruction size to use.
-// @val1 | @val2 - f: 0 - @val1 = int lit | @val2 = register ID
+// @val1 | @val2 - f: 0 - @val1 = int lit | @val2 = registerID
 //                 f: 1 - @val1 = int lit | @val2 = stack_offset.
-//                 f: 2 - @val1 = stack_offset | @val2 = register ID.
-//                 f: 3 - @val1 = register ID | @val2 = stack_offset.
+//                 f: 2 - @val1 = stack_offset | @val2 = registerID.
+//                 f: 3 - @val1 = registerID | @val2 = stack_offset.
 //
 // @f - f - flag that describes what the contents of @val should be.
 //
@@ -94,24 +97,41 @@ static void emitMov(char suffix, int val1, int val2, int f) {
       fprintf(kOutFile, "\tmov%c\t%s, -%i(%%rbp)\n", suffix, regGetID(val1), val2);
       break;
     default:
-      ERROR("WHACK");
+      ERROR("Invalid arg(f)");
   }
 }
 
 //
 // genEq()
 // @root - Root of Ast binary operation.
-// @l_reg - l_reg.
-// @r_reg - r_reg.
+// @l_val - l_val.
+// @r_val - r_val.
 //
 // Emits code to mov @r_reg into @l_reg if @root is more than a binary equation.
 // Returns AST_NULL.
 //
-static int genEq(struct Ast *root, int l_reg, int r_reg) {
+static int genEq(struct Ast *root, int l_val, int r_val) {
+  char suffix;
+  int stk_off;
+
+  // Only do something if we're not doing a direct assignment.
   if (root->r_ast->type != AST_LIT) {
-    char suffix = instrGetMatchingSuffix(r_reg);
-    emitMov(suffix, r_reg, l_reg, 3);
-    regUnRsv(r_reg);
+    suffix = instrGetMatchingSuffix(r_val);
+    stk_off = l_val;
+
+    int regID = r_val;
+
+    emitMov(suffix, regID, stk_off, 3);
+    regUnRsv(regID);
+  } else {
+    int symbol_idx = root->l_ast->val.symbol_idx;
+    struct Symbols *symbol = &kSymbolsTable[symbol_idx];
+    suffix = instrGetMatchingSuffix(symbol->sz - 1);
+
+    int num = r_val;
+    stk_off = l_val;
+
+    emitMov(suffix, num, stk_off, 1);
   }
   return AST_NULL;
 }
@@ -182,100 +202,102 @@ static void emitSub(char suffix, int val, const char *reg, bool no_int) {
 //
 // genMul()
 // @root - Root of Ast binary operation.
-// @l_reg - l_reg.
-// @r_reg - r_reg.
+// @l_val - l_val.
+// @r_val - r_val.
 //
-// Returns the registerID storing the product of @l_reg and @r_reg.
+// Returns the registerID storing the product of @l_val and @r_val.
 //
-static int genMul(struct Ast *root, int l_reg, int r_reg) {
+static int genMul(struct Ast *root, int l_val, int r_val) {
   char suffix;
 
   if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
+    // We need to add a check here to ensure we are using a register large
+    // enough to fit the requested value.
     int reg = regRsv(4);
     suffix = instrGetMatchingSuffix(4 - 1);
-    emitMov(suffix, l_reg, reg, 0);
-    emitMul(suffix, r_reg, regGetID(reg), false);
+    emitMov(suffix, l_val, reg, 0);
+    emitMul(suffix, r_val, regGetID(reg), false);
     return reg;
   } else if (root->l_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitMul(suffix, l_reg, regGetID(r_reg), false);
-    return r_reg;
+    suffix = instrGetMatchingSuffix(r_val);
+    emitMul(suffix, l_val, regGetID(r_val), false);
+    return r_val;
   } else if (root->r_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(l_reg);
-    emitMul(suffix, r_reg, regGetID(l_reg), false);
+    suffix = instrGetMatchingSuffix(l_val);
+    emitMul(suffix, r_val, regGetID(l_val), false);
   } else {
-    regEqualize(&l_reg, r_reg);
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitMul(suffix, r_reg, regGetID(l_reg), true);
-    regUnRsv(r_reg);
+    regEqualize(&l_val, r_val);
+    suffix = instrGetMatchingSuffix(r_val);
+    emitMul(suffix, r_val, regGetID(l_val), true);
+    regUnRsv(r_val);
   }
-  return l_reg;
+  return l_val;
 }
 
 //
 // genAdd()
 // @root - Root of Ast binary operation.
-// @l_reg - l_reg.
-// @r_reg - r_reg.
+// @l_val - l_val.
+// @r_val - r_val.
 //
-// Returns the registerID storing the sum of @l_reg and @r_reg.
+// Returns the registerID storing the sum of @l_val and @r_val.
 //
-static int genAdd(struct Ast *root, int l_reg, int r_reg) {
+static int genAdd(struct Ast *root, int l_val, int r_val) {
   char suffix;
 
   if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
     int reg = regRsv(4);
     suffix = instrGetMatchingSuffix(4 - 1);
-    emitMov(suffix, l_reg, reg, 0);
-    emitAdd(suffix, r_reg, regGetID(reg), false);
+    emitMov(suffix, l_val, reg, 0);
+    emitAdd(suffix, r_val, regGetID(reg), false);
     return reg;
   } else if (root->l_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitAdd(suffix, l_reg, regGetID(r_reg), false);
-    return r_reg;
+    suffix = instrGetMatchingSuffix(r_val);
+    emitAdd(suffix, l_val, regGetID(r_val), false);
+    return r_val;
   } else if (root->r_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(l_reg);
-    emitAdd(suffix, r_reg, regGetID(l_reg), false);
+    suffix = instrGetMatchingSuffix(l_val);
+    emitAdd(suffix, r_val, regGetID(l_val), false);
   } else {
-    regEqualize(&l_reg, r_reg);
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitAdd(suffix, r_reg, regGetID(l_reg), true);
-    regUnRsv(r_reg);
+    regEqualize(&l_val, r_val);
+    suffix = instrGetMatchingSuffix(r_val);
+    emitAdd(suffix, r_val, regGetID(l_val), true);
+    regUnRsv(r_val);
   }
-  return l_reg;
+  return l_val;
 }
 
 //
 // genSub()
 // @root - Root of Ast binary operation.
-// @l_reg - l_reg.
-// @r_reg - r_reg.
+// @l_val - l_val.
+// @r_val - r_val.
 //
-// Returns the registerID storing the difference of @l_reg and @r_reg.
+// Returns the registerID storing the difference of @l_val and @r_val.
 //
-static int genSub(struct Ast *root, int l_reg, int r_reg) {
+static int genSub(struct Ast *root, int l_val, int r_val) {
   char suffix;
 
   if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
     int reg = regRsv(4);
     suffix = instrGetMatchingSuffix(4 - 1);
-    emitMov(suffix, l_reg, reg, 0);
-    emitSub(suffix, r_reg, regGetID(reg), false);
+    emitMov(suffix, l_val, reg, 0);
+    emitSub(suffix, r_val, regGetID(reg), false);
     return reg;
   } else if (root->l_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitSub(suffix, l_reg, regGetID(r_reg), false);
-    return r_reg;
+    suffix = instrGetMatchingSuffix(r_val);
+    emitSub(suffix, l_val, regGetID(r_val), false);
+    return r_val;
   } else if (root->r_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(l_reg);
-    emitSub(suffix, r_reg, regGetID(l_reg), false);
+    suffix = instrGetMatchingSuffix(l_val);
+    emitSub(suffix, r_val, regGetID(l_val), false);
   } else {
-    regEqualize(&l_reg, r_reg);
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitSub(suffix, r_reg, regGetID(l_reg), true);
-    regUnRsv(r_reg);
+    regEqualize(&l_val, r_val);
+    suffix = instrGetMatchingSuffix(r_val);
+    emitSub(suffix, r_val, regGetID(l_val), true);
+    regUnRsv(r_val);
   }
-  return l_reg;
+  return l_val;
 }
 
 // ########################################
@@ -284,32 +306,12 @@ static int genSub(struct Ast *root, int l_reg, int r_reg) {
 //
 // ########################################
 
-static int last_alloc_var_idx = 0;
-
-//
-// genLoadLit()
-// @val - Int value to load into register.
-//
-// Stores @val into recently allocated variable on the stack.
-// Returns AST_NULL.
-//
-//
-static int genLoadLit(int val) {
-  struct Symbols symbol = kSymbolsTable[last_alloc_var_idx];
-
-  char suffix = instrGetMatchingSuffix(symbol.sz - 1);
-  int stk_off = symbol.stk_off;
-
-  emitMov(suffix, val, stk_off, 1);
-  return AST_NULL;
-}
-
 //
 // genLoadSymbol()
 // @id - Identifer name to load from the stack.
 //
 // Loads the value at the stack position representing @id into a new register.
-// Returns the register ID of the newly allocated register.
+// Returns the registerID of the newly allocated register.
 //
 static int genLoadSymbol(char *id) {
   int sym_idx = symbolFind(id);
@@ -336,11 +338,12 @@ static int genStoreSymbol(char *id) {
   int sym_idx = symbolFind(id);
 
   if (sym_idx == -1) {
-    ERROR("Wierd symbol found, not sure if we're going to keep this error");
+    ERROR("Undefined symbols found, this should never occur and the compiler code should be reviewed");
   }
 
   struct Symbols *symbol = &kSymbolsTable[sym_idx];
-  
+  static int last_alloc_var_idx = 0;
+
   if (symbol->stk_off == 0) {
     symbol->stk_off = kSymbolsTable[last_alloc_var_idx].stk_off + symbol->sz;
 
@@ -359,37 +362,34 @@ static int genStoreSymbol(char *id) {
 // Converts @root to x86_64 ATT-style code.
 // Results after each operation are immediately stored into @kOutFile.
 //
-static int genGenerateCode(struct Ast *root, enum kAstType parent_type) {
-  int l_reg = 0, r_reg = 0;
+static int genGenerateCode(struct Ast *root) {
+  int l_val = 0, r_val = 0;
 
   if (root->l_ast) {
-    l_reg = genGenerateCode(root->l_ast, root->type);
+    l_val = genGenerateCode(root->l_ast);
   }
 
   if (root->r_ast) {
-    r_reg = genGenerateCode(root->r_ast, root->type);
+    r_val = genGenerateCode(root->r_ast);
   }
 
   switch (root->type) {
     case AST_LIT:
-      if (parent_type != AST_EQ) {
-        return root->val.val;
-      }
-      return genLoadLit(root->val.val);
+      return root->val.val;
     case AST_ID:
       return genLoadSymbol(kSymbolsTable[root->val.symbol_idx].name);
     case AST_LV_ID:
       return genStoreSymbol(kSymbolsTable[root->val.symbol_idx].name);
     case AST_EQ:
-      return genEq(root, l_reg, r_reg);
+      return genEq(root, l_val, r_val);
     case AST_ASTERISK:
-      return genMul(root, l_reg, r_reg);
+      return genMul(root, l_val, r_val);
     case AST_PLUS:
-      return genAdd(root, l_reg, r_reg);
+      return genAdd(root, l_val, r_val);
     case AST_HYPH:
-      return genSub(root, l_reg, r_reg);
+      return genSub(root, l_val, r_val);
     case AST_RET:
-      return emitReturn(r_reg);
+      return emitReturn(root, r_val);
     case AST_NULL:
     case AST_GLUE:
       return 0;
@@ -412,7 +412,7 @@ void genGenerate(struct Ast *root, const char *filename) {
     emitPreamble();
 
     if (root != NULL) {
-     genGenerateCode(root, AST_NULL);
+     genGenerateCode(root);
     }
 
     emitPostamble();

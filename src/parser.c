@@ -14,11 +14,15 @@
 // next element in the linked list.
 //
 static void parserMatch(struct Token **tok, enum kTokenType type) {
+  extern const char *kAstTypeStr[];
+
   if ((*tok)->type != type) {
-    ERROR("Expected '%i', got '%i'", type, (*tok)->type);
+    ERROR("Expected '%s', got '%s'", kAstTypeStr[type], kAstTypeStr[(*tok)->type]);
   }
   *tok = (*tok)->next;
 }
+
+static struct Ast *parserParseDefinition(struct Token **head);
 
 //
 // parserParseDeclaration()
@@ -26,11 +30,19 @@ static void parserMatch(struct Token **tok, enum kTokenType type) {
 //
 // Returns an Ast of the parsed 'declaration' expression found in @head.
 //
-static void parserParseDeclaration(struct Token **head) {
+static struct Ast *parserParseDeclaration(struct Token **head) {
+  struct Ast *ast = NULL;
+
   switch ((*head)->type) {
     case TOK_INT:
       *head = (*head)->next;
       symbolAdd((*head)->data, 4);
+
+      if ((*head)->next->type == TOK_EQ) {
+        ast = parserParseDefinition(head);
+       *head = (*head)->prev;
+       *head = (*head)->prev;
+      }
       break;
     case TOK_LONG:
       *head = (*head)->next;
@@ -42,6 +54,8 @@ static void parserParseDeclaration(struct Token **head) {
 
   *head = (*head)->next;
   parserMatch(head, TOK_SEMI);
+
+  return ast;
 }
 
 //
@@ -104,14 +118,11 @@ static struct Ast *parserParseExpr(struct Token **head) {
   switch ((*head)->type) {
     case TOK_ID:
       return parserParseDefinition(head);
-      break;
     case TOK_INT:
     case TOK_LONG:
-      parserParseDeclaration(head);
-      break;
+      return parserParseDeclaration(head);
     case TOK_RET:
       return parserParseReturn(head);
-      break;
     default:
       ERROR("Unexpected token: '%i'", (*head)->type);
   }
@@ -124,6 +135,10 @@ struct Ast *parserParse(struct Token **head) {
 
   while ((*head)->type != TOK_EOF) {
     r_ast = parserParseExpr(head);
+
+    if (r_ast == NULL) {
+      continue;
+    }
 
     if (l_ast == NULL) {
       l_ast = r_ast;

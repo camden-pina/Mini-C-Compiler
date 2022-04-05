@@ -7,6 +7,7 @@
 #include "parser.h"
 #include "gen.h"
 #include "symbols.h"
+#include "reg.h"
 
 struct Opt {
   char *in_file;
@@ -75,6 +76,10 @@ int main(int argc, char *argv[]) {
   free(root);
 
   symbolsFree();
+
+  if (regCheckFreeAll() != 1) {
+    ERROR("Failed to free all allocated registers.");
+  }
 
   SUCCESS("Compilation process finished");
 }
