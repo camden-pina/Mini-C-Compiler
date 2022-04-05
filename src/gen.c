@@ -7,8 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <stdint.h>
-
 extern struct Symbols kSymbolsTable[MAX_SYMBOLS];
 
 static FILE *kOutFile;
@@ -21,7 +19,6 @@ static FILE *kOutFile;
 
 static const char *kPreamble = 
   ".global main\n\n"
-  ".align 2\n\n"
   "main:\n"
   "\tpushq %rbp\n"
   "\tmovq %rsp, %rbp\n";
@@ -55,15 +52,14 @@ static int emitReturn(struct Ast *root, int reg) {
   if (root->r_ast->type == AST_LIT) {
     fprintf(kOutFile, "\tmovq $%i, %%rax\n", root->r_ast->val.val);
   } else {
+    // Used for register equalization.
+    if (reg != 0 && reg != 4) {
+      int rax = 4;
+      regEqualize(&reg, rax);
 
-  // Used for register equalization.
-  if (reg != 0 && reg != 4) {
-    int rax = 4;
-    regEqualize(&reg, rax);
-
-    fprintf(kOutFile, "\tmovq %s, %%rax\n", regGetID(reg));
-  }
-  regUnRsv(reg);
+      fprintf(kOutFile, "\tmovq %s, %%rax\n", regGetID(reg));
+    }
+    regUnRsv(reg);
   }
 
   return AST_NULL;
@@ -76,10 +72,10 @@ static int emitReturn(struct Ast *root, int reg) {
 //
 // emitMov()
 // @suffix - suffix describing instruction size to use.
-// @val1 | @val2 - f: 0 - @val1 = int lit | @val2 = register ID
+// @val1 | @val2 - f: 0 - @val1 = int lit | @val2 = registerID
 //                 f: 1 - @val1 = int lit | @val2 = stack_offset.
-//                 f: 2 - @val1 = stack_offset | @val2 = register ID.
-//                 f: 3 - @val1 = register ID | @val2 = stack_offset.
+//                 f: 2 - @val1 = stack_offset | @val2 = registerID.
+//                 f: 3 - @val1 = registerID | @val2 = stack_offset.
 //
 // @f - f - flag that describes what the contents of @val should be.
 //
@@ -115,23 +111,27 @@ static void emitMov(char suffix, int val1, int val2, int f) {
 // Returns AST_NULL.
 //
 static int genEq(struct Ast *root, int l_val, int r_val) {
+  char suffix;
   int stk_off;
 
   // Only do something if we're not doing a direct assignment.
   if (root->r_ast->type != AST_LIT) {
-    char suffix = instrGetMatchingSuffix(r_val);
+    suffix = instrGetMatchingSuffix(r_val);
     stk_off = l_val;
-    emitMov(suffix, r_val, stk_off, 3);
-    regUnRsv(r_val);
+
+    int regID = r_val;
+
+    emitMov(suffix, regID, stk_off, 3);
+    regUnRsv(regID);
   } else {
     int symbol_idx = root->l_ast->val.symbol_idx;
     struct Symbols *symbol = &kSymbolsTable[symbol_idx];
-    char suffix = instrGetMatchingSuffix(symbol->sz - 1);
+    suffix = instrGetMatchingSuffix(symbol->sz - 1);
 
-    int val = r_val;
+    int num = r_val;
     stk_off = l_val;
 
-    emitMov(suffix, val, stk_off, 1);
+    emitMov(suffix, num, stk_off, 1);
   }
   return AST_NULL;
 }
@@ -311,7 +311,7 @@ static int genSub(struct Ast *root, int l_val, int r_val) {
 // @id - Identifer name to load from the stack.
 //
 // Loads the value at the stack position representing @id into a new register.
-// Returns the register ID of the newly allocated register.
+// Returns the registerID of the newly allocated register.
 //
 static int genLoadSymbol(char *id) {
   int sym_idx = symbolFind(id);
