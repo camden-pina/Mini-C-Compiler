@@ -108,28 +108,28 @@ static void emitMov(char suffix, int val1, int val2, int f) {
 //
 // genEq()
 // @root - Root of Ast binary operation.
-// @l_reg - l_reg.
-// @r_reg - r_reg.
+// @l_val - l_val.
+// @r_val - r_val.
 //
 // Emits code to mov @r_reg into @l_reg if @root is more than a binary equation.
 // Returns AST_NULL.
 //
-static int genEq(struct Ast *root, int l_reg, int r_reg) {
+static int genEq(struct Ast *root, int l_val, int r_val) {
   int stk_off;
 
   // Only do something if we're not doing a direct assignment.
   if (root->r_ast->type != AST_LIT) {
-    char suffix = instrGetMatchingSuffix(r_reg);
-    stk_off = l_reg;
-    emitMov(suffix, r_reg, stk_off, 3);
-    regUnRsv(r_reg);
+    char suffix = instrGetMatchingSuffix(r_val);
+    stk_off = l_val;
+    emitMov(suffix, r_val, stk_off, 3);
+    regUnRsv(r_val);
   } else {
     int symbol_idx = root->l_ast->val.symbol_idx;
     struct Symbols *symbol = &kSymbolsTable[symbol_idx];
     char suffix = instrGetMatchingSuffix(symbol->sz - 1);
 
-    int val = r_reg;
-    stk_off = l_reg;
+    int val = r_val;
+    stk_off = l_val;
 
     emitMov(suffix, val, stk_off, 1);
   }
@@ -202,12 +202,12 @@ static void emitSub(char suffix, int val, const char *reg, bool no_int) {
 //
 // genMul()
 // @root - Root of Ast binary operation.
-// @l_reg - l_reg.
-// @r_reg - r_reg.
+// @l_val - l_val.
+// @r_val - r_val.
 //
-// Returns the registerID storing the product of @l_reg and @r_reg.
+// Returns the registerID storing the product of @l_val and @r_val.
 //
-static int genMul(struct Ast *root, int l_reg, int r_reg) {
+static int genMul(struct Ast *root, int l_val, int r_val) {
   char suffix;
 
   if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
@@ -215,89 +215,89 @@ static int genMul(struct Ast *root, int l_reg, int r_reg) {
     // enough to fit the requested value.
     int reg = regRsv(4);
     suffix = instrGetMatchingSuffix(4 - 1);
-    emitMov(suffix, l_reg, reg, 0);
-    emitMul(suffix, r_reg, regGetID(reg), false);
+    emitMov(suffix, l_val, reg, 0);
+    emitMul(suffix, r_val, regGetID(reg), false);
     return reg;
   } else if (root->l_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitMul(suffix, l_reg, regGetID(r_reg), false);
-    return r_reg;
+    suffix = instrGetMatchingSuffix(r_val);
+    emitMul(suffix, l_val, regGetID(r_val), false);
+    return r_val;
   } else if (root->r_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(l_reg);
-    emitMul(suffix, r_reg, regGetID(l_reg), false);
+    suffix = instrGetMatchingSuffix(l_val);
+    emitMul(suffix, r_val, regGetID(l_val), false);
   } else {
-    regEqualize(&l_reg, r_reg);
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitMul(suffix, r_reg, regGetID(l_reg), true);
-    regUnRsv(r_reg);
+    regEqualize(&l_val, r_val);
+    suffix = instrGetMatchingSuffix(r_val);
+    emitMul(suffix, r_val, regGetID(l_val), true);
+    regUnRsv(r_val);
   }
-  return l_reg;
+  return l_val;
 }
 
 //
 // genAdd()
 // @root - Root of Ast binary operation.
-// @l_reg - l_reg.
-// @r_reg - r_reg.
+// @l_val - l_val.
+// @r_val - r_val.
 //
-// Returns the registerID storing the sum of @l_reg and @r_reg.
+// Returns the registerID storing the sum of @l_val and @r_val.
 //
-static int genAdd(struct Ast *root, int l_reg, int r_reg) {
+static int genAdd(struct Ast *root, int l_val, int r_val) {
   char suffix;
 
   if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
     int reg = regRsv(4);
     suffix = instrGetMatchingSuffix(4 - 1);
-    emitMov(suffix, l_reg, reg, 0);
-    emitAdd(suffix, r_reg, regGetID(reg), false);
+    emitMov(suffix, l_val, reg, 0);
+    emitAdd(suffix, r_val, regGetID(reg), false);
     return reg;
   } else if (root->l_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitAdd(suffix, l_reg, regGetID(r_reg), false);
-    return r_reg;
+    suffix = instrGetMatchingSuffix(r_val);
+    emitAdd(suffix, l_val, regGetID(r_val), false);
+    return r_val;
   } else if (root->r_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(l_reg);
-    emitAdd(suffix, r_reg, regGetID(l_reg), false);
+    suffix = instrGetMatchingSuffix(l_val);
+    emitAdd(suffix, r_val, regGetID(l_val), false);
   } else {
-    regEqualize(&l_reg, r_reg);
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitAdd(suffix, r_reg, regGetID(l_reg), true);
-    regUnRsv(r_reg);
+    regEqualize(&l_val, r_val);
+    suffix = instrGetMatchingSuffix(r_val);
+    emitAdd(suffix, r_val, regGetID(l_val), true);
+    regUnRsv(r_val);
   }
-  return l_reg;
+  return l_val;
 }
 
 //
 // genSub()
 // @root - Root of Ast binary operation.
-// @l_reg - l_reg.
-// @r_reg - r_reg.
+// @l_val - l_val.
+// @r_val - r_val.
 //
-// Returns the registerID storing the difference of @l_reg and @r_reg.
+// Returns the registerID storing the difference of @l_val and @r_val.
 //
-static int genSub(struct Ast *root, int l_reg, int r_reg) {
+static int genSub(struct Ast *root, int l_val, int r_val) {
   char suffix;
 
   if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
     int reg = regRsv(4);
     suffix = instrGetMatchingSuffix(4 - 1);
-    emitMov(suffix, l_reg, reg, 0);
-    emitSub(suffix, r_reg, regGetID(reg), false);
+    emitMov(suffix, l_val, reg, 0);
+    emitSub(suffix, r_val, regGetID(reg), false);
     return reg;
   } else if (root->l_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitSub(suffix, l_reg, regGetID(r_reg), false);
-    return r_reg;
+    suffix = instrGetMatchingSuffix(r_val);
+    emitSub(suffix, l_val, regGetID(r_val), false);
+    return r_val;
   } else if (root->r_ast->type == AST_LIT) {
-    suffix = instrGetMatchingSuffix(l_reg);
-    emitSub(suffix, r_reg, regGetID(l_reg), false);
+    suffix = instrGetMatchingSuffix(l_val);
+    emitSub(suffix, r_val, regGetID(l_val), false);
   } else {
-    regEqualize(&l_reg, r_reg);
-    suffix = instrGetMatchingSuffix(r_reg);
-    emitSub(suffix, r_reg, regGetID(l_reg), true);
-    regUnRsv(r_reg);
+    regEqualize(&l_val, r_val);
+    suffix = instrGetMatchingSuffix(r_val);
+    emitSub(suffix, r_val, regGetID(l_val), true);
+    regUnRsv(r_val);
   }
-  return l_reg;
+  return l_val;
 }
 
 // ########################################
@@ -338,7 +338,7 @@ static int genStoreSymbol(char *id) {
   int sym_idx = symbolFind(id);
 
   if (sym_idx == -1) {
-    ERROR("Wierd symbol found, not sure if we're going to keep this error");
+    ERROR("Undefined symbols found, this should never occur and the compiler code should be reviewed");
   }
 
   struct Symbols *symbol = &kSymbolsTable[sym_idx];
