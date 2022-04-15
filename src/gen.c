@@ -58,6 +58,7 @@ static int emitReturn(struct Ast *root, int reg) {
       regEqualize(&reg, rax);
 
       fprintf(kOutFile, "\tmovq %s, %%rax\n", regGetID(reg));
+      fflush(kOutFile);
     }
     regUnRsv(reg);
   }
@@ -134,6 +135,82 @@ static int genEq(struct Ast *root, int l_val, int r_val) {
     emitMov(suffix, num, stk_off, 1);
   }
   return AST_NULL;
+}
+
+//
+// emitCmp()
+// @
+//
+/*
+static int emitCmp(int l_val, int r_val, const char *instr) {
+  fprintf(kOutFile, "\tcmpl\t$%i, %s\n", l_val, regGetID(r_val));
+  fprintf(kOutFile, "\t%s\t%s\n", instr, regGetID(r_val+9));
+  fprintf(kOutFile, "\tmovzbl\t%s, %s\n", regGetID(r_val+9), regGetID(r_val));
+
+  return r_val;
+};
+*/
+
+//
+// emitCmp()
+// @suffix - suffix describing instruction size to use.
+// @val - no_int: false - int lit.
+//        no_int: true  - register id.
+// @reg - register to store the product.
+// @no_int - flag that describes what the contents of @val should be.
+//
+// Emits x86_64 code to get the product of @val and @reg.
+// Results are stored in @reg.
+//
+static void emitCmp(char suffix, int val, int reg, const char *instr, bool no_int) {
+  if (no_int) {
+    fprintf(kOutFile, "\tcmp%c\t%s, %s\n", suffix, regGetID(val), regGetID(reg));
+    fprintf(kOutFile, "\t%s\t%s\n", instr, regGetID(reg+9));
+    fprintf(kOutFile, "\tmovzb%c\t%s, %s\n", suffix, regGetID(reg+9), regGetID(reg));
+  } else {
+    fprintf(kOutFile, "\tcmp%c\t$%i, %s\n", suffix, val, regGetID(reg));
+    fprintf(kOutFile, "\t%s\t%s\n", instr, regGetID(reg+9));
+    fprintf(kOutFile, "\tmovzb%c\t%s, %s\n", suffix, regGetID(reg+9), regGetID(reg));
+  }
+}
+
+const char *kCmpStr[] = { "setl", "setg", "setl" };
+
+//
+// genCmp()
+// @root - Root of Ast binary operation.
+// @l_val - l_val.
+// @r_val - r_val.
+// @instr - Instruction to use.
+//
+// Returns the registerID storing the comparison of @l_val and @r_val.
+//
+static int genCmp(struct Ast *root, int l_val, int r_val, enum kAstType instr) {
+  char suffix;
+  unsigned int instr_idx = instr - AST_LT;
+
+  if (root->l_ast->type == AST_LIT && root->r_ast->type == AST_LIT) {
+    // We need to add a check here to ensure we are using a register large
+    // enough to fit the requested value.
+    int reg = regRsv(4);
+    suffix = instrGetMatchingSuffix(4 - 1);
+    emitMov(suffix, l_val, reg, 0);
+    emitCmp(suffix, r_val, reg, kCmpStr[instr_idx], false);
+    return reg;
+  } else if (root->l_ast->type == AST_LIT) {
+    suffix = instrGetMatchingSuffix(r_val);
+    emitCmp(suffix, l_val, r_val, kCmpStr[instr_idx + 1], false);
+    return r_val;
+  } else if (root->r_ast->type == AST_LIT) {
+    suffix = instrGetMatchingSuffix(l_val);
+    emitCmp(suffix, r_val, l_val, kCmpStr[instr_idx], false);
+  } else {
+    regEqualize(&l_val, r_val);
+    suffix = instrGetMatchingSuffix(r_val);
+    emitCmp(suffix, r_val, l_val, kCmpStr[instr_idx], true);
+    regUnRsv(r_val);
+  }
+  return l_val;
 }
 
 // ########################################
@@ -390,6 +467,10 @@ static int genGenerateCode(struct Ast *root) {
       return genSub(root, l_val, r_val);
     case AST_RET:
       return emitReturn(root, r_val);
+    case AST_LT:
+      return genCmp(root, l_val, r_val, AST_LT);
+    case AST_GT:
+      return genCmp(root, l_val, r_val, AST_GT);
     case AST_NULL:
     case AST_GLUE:
       return 0;

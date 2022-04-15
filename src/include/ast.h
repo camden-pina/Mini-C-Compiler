@@ -18,6 +18,9 @@ enum kAstType {
   AST_PLUS,
   AST_HYPH,
 
+  AST_LT,
+  AST_GT,
+
   AST_CHAR,
   AST_INT,
   AST_LONG,

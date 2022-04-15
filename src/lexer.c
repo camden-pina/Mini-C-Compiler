@@ -52,6 +52,12 @@ struct Token *lexerTokenize(const char *stream) {
     } else {
       // Handle operators and punctuators.
       switch (*p) {
+        case '<':
+          token = tokenCreate(p, TOK_LT);
+          break;
+        case '>':
+          token = tokenCreate(p, TOK_GT);
+          break;
         case '*':
           token = tokenCreate(p, TOK_ASTERISK);
           break;

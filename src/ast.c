@@ -18,6 +18,9 @@ const char* kAstTypeStr[] = {
   "AST_PLUS",
   "AST_HYPH",
 
+  "AST_LT",
+  "AST_GT",
+
   "AST_CHAR",
   "AST_INT",
   "AST_LONG",
@@ -108,6 +111,7 @@ static int kOpPrec[] = {
   0, 0, 0, 0,
   0, 0,
   2, 1, 1, // M, D, A, S
+  3, 3, // LT, GT
 };
 
 //

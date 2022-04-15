@@ -16,6 +16,9 @@ enum kTokenType {
   TOK_PLUS,
   TOK_HYPH,
 
+  TOK_LT,
+  TOK_GT,
+
   TOK_CHAR,
   TOK_INT,
   TOK_LONG,

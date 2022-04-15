@@ -1,12 +1,13 @@
 #include "reg.h"
 #include "common.h"
 
-#define REG_COUNT 8
+#define REG_COUNT 16
 
 // Registers
 static char *kGenRegList[REG_COUNT] = {
   "%eax", "%ebx", "%ecx", "%edx",
   "%rax", "%rbx", "%rcx", "%rdx",
+  "%ah", "%al", "%bh", "%bl", "%ch", "%cl", "%dh", "%dl",
 };
 
 static int kGenRegListFree[REG_COUNT];
